@@ -1,0 +1,13 @@
+[package]
+name = "lets-make-games-with-rust"
+version = "0.1.0"
+authors = ["Elijah Voigt <elijah.caine.mv@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+
+[dependencies.amethyst]
+version = "0.15.1"
+features = ["vulkan"]
+# Use this on MacOS:
+# features = ["macos"]

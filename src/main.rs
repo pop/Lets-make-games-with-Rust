@@ -1,14 +1,19 @@
 use amethyst::{
     assets::{AssetStorage, Loader},
-    core::transform::{Transform, TransformBundle},
-    ecs::{Component, DenseVecStorage},
+    core::{
+        timing::Time,
+        transform::{Transform, TransformBundle},
+    },
+    derive::SystemDesc,
+    ecs::{Component, DenseVecStorage, Join, Read, ReadStorage, System, SystemData, WriteStorage},
+    input::{InputBundle, InputHandler, StringBindings},
     prelude::*,
     renderer::{
         plugins::{RenderFlat2D, RenderToWindow},
         types::DefaultBackend,
-        RenderingBundle,
+        Camera, ImageFormat, RenderingBundle, SpriteRender, SpriteSheet, SpriteSheetFormat,
+        Texture,
     },
-    renderer::{Camera, ImageFormat, SpriteRender, SpriteSheet, SpriteSheetFormat, Texture},
     utils::application_root_dir,
 };
 
@@ -42,10 +47,19 @@ fn main() -> amethyst::Result<()> {
         )
         .with_plugin(RenderFlat2D::default());
 
+    // The InputBundle maps user input to game actions
+    // Later on we can monitor user input and search for things like "horizontal" instead of the
+    // literal key inputs.
+    let bindings_path = app_root.join("config").join("bindings.ron");
+    let inputs = InputBundle::<StringBindings>::new().with_bindings_from_file(bindings_path)?;
+
     // Create our game object with our bundles.
+    // we also include our own systems now that we have some of our own to run!
     let game_data = GameDataBuilder::default()
         .with_bundle(renderer)?
-        .with_bundle(transform)?;
+        .with_bundle(transform)?
+        .with_bundle(inputs)?
+        .with(MoveSystem, "move_system", &["input_system"]);
 
     // Create our application with our assets, our starting state, and our systems.
     let mut game = Application::new(assets_dir, SeaglState, game_data)?;
@@ -159,4 +173,52 @@ pub struct Seagl;
 // We could optimize the Storage type if we wanted, but DenseVecStorage is a pretty good default.
 impl Component for Seagl {
     type Storage = DenseVecStorage<Self>;
+}
+
+// Movement system
+// Systems can store state, but ours does not.
+// It's just a data type to implement System onto.
+#[derive(SystemDesc)]
+pub struct MoveSystem;
+
+impl<'s> System<'s> for MoveSystem {
+    // We need four pices of data to query on:
+    // * Transform (everything with coordinates) as WriteStorage because we will modify it.
+    // * Seagl as ReadStorage, we won't modify this component, but we will use it to filter for
+    //   specific entities.
+    // * Time is used to figure out how much time has passed since the last frame. This is then
+    //   used to determine how far the Seagl should move this frame.
+    // * InputHandler gives us all of the user input. We monitor for specific input and throw away
+    //   what we don't need.
+    type SystemData = (
+        WriteStorage<'s, Transform>,
+        ReadStorage<'s, Seagl>,
+        Read<'s, Time>,
+        Read<'s, InputHandler<StringBindings>>,
+    );
+
+    // We define a run method which takes a mutable reference to the system itself and the
+    // systemdata described above.
+    // I still think it's so cool that we can tell from the function signature what this function
+    // does: modfy transforms based on the state of seagls + time + user input.
+    fn run(&mut self, (mut transforms, seagls, time, input): Self::SystemData) {
+        // This is fun to modify. A speed of 50 felt pretty good.
+        let speed: f32 = 50.0;
+        // Iterate over all Seagls. I know there is only one, but we could add more!
+        for (_seagl, transform) in (&seagls, &mut transforms).join() {
+            // Horizontal movement can be positive or negative
+            if let Some(horizontal) = input.axis_value("horizontal") {
+                transform.prepend_translation_x(
+                    // move the horizontal amount (some positive or negative value)
+                    // Multiplied by the time difference since the last frame
+                    // And scaled by the speed we want to move
+                    horizontal * time.delta_seconds() * speed as f32,
+                );
+            };
+            // Same stuff but for up and down.
+            if let Some(vertical) = input.axis_value("vertical") {
+                transform.prepend_translation_y(vertical * time.delta_seconds() * speed as f32);
+            };
+        }
+    }
 }

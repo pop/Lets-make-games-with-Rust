@@ -1,0 +1,14 @@
+// Modify this file to map up/down/left/right to different (WASD) keys
+(
+  // we use keyboard for our interaction, but joysticks would produce gradients
+  // of values as opposed to a binary ON/OFF like we get in this game.
+  axes: {
+    "horizontal": Emulated(pos: Key(Right), neg: Key(Left)),
+    "vertical": Emulated(pos: Key(Up), neg: Key(Down)),
+  },
+  // We don't use actions, but these would be like:
+  // "jump" -> "spacebar"
+  // "quit" -> "esc"
+  // "interact" -> "e"
+  actions: {},
+)

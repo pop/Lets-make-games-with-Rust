@@ -200,7 +200,7 @@ impl<'s> System<'s> for MoveSystem {
     // We define a run method which takes a mutable reference to the system itself and the
     // systemdata described above.
     // I still think it's so cool that we can tell from the function signature what this function
-    // does: modfy transforms based on the state of seagls + time + user input.
+    // does: modify transforms based on the state of seagls + time + user input.
     fn run(&mut self, (mut transforms, seagls, time, input): Self::SystemData) {
         // This is fun to modify. A speed of 50 felt pretty good.
         let speed: f32 = 50.0;
@@ -214,6 +214,19 @@ impl<'s> System<'s> for MoveSystem {
                     // And scaled by the speed we want to move
                     horizontal * time.delta_seconds() * speed as f32,
                 );
+                // If the user input is non-zero we change direction
+                // We're rotating around the Y-axis by PI because we are rotating by radians.
+                // It would be more intuitive maybe to mirror our sprite or something, but this
+                // achieves the same result.
+                if horizontal > 0.0 {
+                    transform.set_rotation_y_axis(std::f32::consts::PI);
+                }
+                // Note we specifically do nothing if the horizontal value is exactly 0 because
+                // that means they're not touching the keyboard, and we want our Seagl to keep
+                // looking in whatever direction they were looking at last.
+                if horizontal < 0.0 {
+                    transform.set_rotation_y_axis(0.0);
+                }
             };
             // Same stuff but for up and down.
             if let Some(vertical) = input.axis_value("vertical") {

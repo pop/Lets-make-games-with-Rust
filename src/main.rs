@@ -5,7 +5,10 @@ use amethyst::{
         transform::{Transform, TransformBundle},
     },
     derive::SystemDesc,
-    ecs::{Component, DenseVecStorage, Join, Read, ReadStorage, System, SystemData, WriteStorage},
+    ecs::{
+        Component, DenseVecStorage, Entities, Join, Read, ReadStorage, System, SystemData,
+        WriteStorage,
+    },
     input::{InputBundle, InputHandler, StringBindings},
     prelude::*,
     renderer::{
@@ -59,7 +62,8 @@ fn main() -> amethyst::Result<()> {
         .with_bundle(renderer)?
         .with_bundle(transform)?
         .with_bundle(inputs)?
-        .with(MoveSystem, "move_system", &["input_system"]);
+        .with(MoveSystem, "move_system", &["input_system"])
+        .with(EatSystem, "eat_system", &["move_system"]);
 
     // Create our application with our assets, our starting state, and our systems.
     let mut game = Application::new(assets_dir, SeaglState, game_data)?;
@@ -159,6 +163,16 @@ impl SimpleState for SeaglState {
             .with(sprite)
             .with(transform)
             .build();
+
+        let burger_sprite = SpriteRender::new(sprite_sheet_handle.clone(), 1);
+        let mut transform = Transform::default();
+        transform.set_translation_xyz(75.0, 75.0, -1.0);
+        data.world
+            .create_entity()
+            .with(Food::default())
+            .with(burger_sprite)
+            .with(transform)
+            .build();
     }
 }
 
@@ -175,6 +189,13 @@ impl Component for Seagl {
     type Storage = DenseVecStorage<Self>;
 }
 
+#[derive(Default)]
+pub struct Food;
+
+impl Component for Food {
+    type Storage = DenseVecStorage<Self>;
+}
+
 // Movement system
 // Systems can store state, but ours does not.
 // It's just a data type to implement System onto.
@@ -182,7 +203,7 @@ impl Component for Seagl {
 pub struct MoveSystem;
 
 impl<'s> System<'s> for MoveSystem {
-    // We need four pices of data to query on:
+    // We need four pieces of data to query on:
     // * Transform (everything with coordinates) as WriteStorage because we will modify it.
     // * Seagl as ReadStorage, we won't modify this component, but we will use it to filter for
     //   specific entities.
@@ -232,6 +253,59 @@ impl<'s> System<'s> for MoveSystem {
             if let Some(vertical) = input.axis_value("vertical") {
                 transform.prepend_translation_y(vertical * time.delta_seconds() * speed as f32);
             };
+        }
+    }
+}
+
+// The most important system of the day
+pub struct EatSystem;
+
+impl<'s> System<'s> for EatSystem {
+    // Here we define a similar SystemData except we're querying on:
+    // * Anything that has a position
+    // * And is a Seagl
+    // * Or is a Food
+    // * We also need a list of all entities so we can remove Food if it is eaten.
+    type SystemData = (
+        ReadStorage<'s, Transform>,
+        ReadStorage<'s, Seagl>,
+        WriteStorage<'s, Food>,
+        Entities<'s>,
+    );
+
+    fn run(&mut self, (transforms, seagls, foods, entities): Self::SystemData) {
+        // We need the position of the seagl, so we iterate over all entities with a position and a
+        // Seagl component.
+        for (_seagl, seagl_pos) in (&seagls, &transforms).join() {
+            // We do the same for food, but this time we also keep track of the literal Entity so
+            // we can destroy it if needed.
+            for (_food, food_pos, entity) in (&foods, &transforms, &entities).join() {
+                // I'll be the first to admit I have no idea how collision detection works
+                // intuitively, so I always reference this doc.
+                // https://developer.mozilla.org/en-US/docs/Games/Techniques/2D_collision_detection
+                // Mozilla is great.
+                //
+                // Note: We're hard-coding the collision boundries here.
+                // We know the seagl is 16x16 pixels and the food is 10x10 pixels.
+                //
+                // We Make the bounding box for the burger and Seagl a little smaller so the Seagl
+                // overlaps with the burger before eating it.
+                if (seagl_pos.translation().x < food_pos.translation().x + 4.0)
+                    && (seagl_pos.translation().x + 8.0 > food_pos.translation().x)
+                    && (seagl_pos.translation().y < food_pos.translation().y + 4.0)
+                    && (seagl_pos.translation().y + 8.0 > food_pos.translation().y)
+                {
+                    // Now you might be wondering, shouldn't `entities` be `mut` because we are
+                    // deleting an entity here?
+                    //
+                    // I _think_ what is going on here is we are marking an entity for deletion,
+                    // but it isn't removed immediately.
+                    // Because deleting an entity can cause lag, we mark it for deletion and then
+                    // Amethyst handles removing it in the background or between frames so it
+                    // doesn't impact performance.
+                    entities.delete(entity).unwrap();
+                }
+            }
         }
     }
 }
